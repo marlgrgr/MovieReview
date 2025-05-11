@@ -36,7 +36,9 @@ const ChangePassword = ({user}) => {
         navigate('/');
       }
     } catch (error) {
-        if(error && error.response && error.response.data && error.response.data.message){
+        if(error && error.response && error.response.data.code === "AUTH-0010"){
+            setMessage('Password must be at least 8 characters long, contain at least one letter, one number, and one special character.');
+        }else if(error && error.response && error.response.data && error.response.data.message){
             setMessage('Failed to change password. ' + error.response.data.message);
         }else{
             setMessage('Failed to change password. Please check your current password.');
