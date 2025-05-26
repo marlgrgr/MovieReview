@@ -4,6 +4,7 @@ import { get, post } from '../services/api';
 import { useModal } from '../context/ModalContext';
 import Navbar from './NavBar';
 import './MovieDetail.css';
+import { getMovieById, getMovieReviewsByMovieId, createMovieReview } from '../services/graphqlService';
 
 const MovieDetail = ({user}) => {
   const { id } = useParams();
@@ -15,12 +16,18 @@ const MovieDetail = ({user}) => {
   const [totalPages, setTotalPages] = useState(0);
   const [loading, setLoading] = useState(false);
   const { showModal } = useModal();
+  const useGraphql = import.meta.env.VITE_API_USING_GRAPHQL?.toLowerCase?.() === "true";
 
   const fetchMovieDetail = async () => {
     setLoading(true);
     try {
-      const response = await get(`/movie/${id}`);
-      setMovie(response.data);
+      if(useGraphql === true){
+        const response = await getMovieById(id);
+        setMovie(response.getMovieById);
+      }else{
+        const response = await get(`/movie/${id}`);
+        setMovie(response.data);
+      }
     } catch (error) {
       console.error("Error loading movie details", error);
     }
@@ -29,10 +36,17 @@ const MovieDetail = ({user}) => {
 
   const fetchReviews = async (page = 1) => {
     try {
-      const response = await get(`/movieReview/movie/${id}?page=${page}&pageSize=5`);
-      setReviews(response.data.results);
-      setCurrentPage(response.data.page);
-      setTotalPages(response.data.totalPages);
+      if(useGraphql === true){
+        const response = await getMovieReviewsByMovieId(id, page, 5);
+        setReviews(response.getMovieReviewResponseDTOByMovieID.results);
+        setCurrentPage(response.getMovieReviewResponseDTOByMovieID.page);
+        setTotalPages(response.getMovieReviewResponseDTOByMovieID.totalPages);
+      }else{
+        const response = await get(`/movieReview/movie/${id}?page=${page}&pageSize=5`);
+        setReviews(response.data.results);
+        setCurrentPage(response.data.page);
+        setTotalPages(response.data.totalPages);
+      }
     } catch (error) {
       console.error("Error loading reviews", error);
     }
@@ -40,11 +54,19 @@ const MovieDetail = ({user}) => {
 
   const handleSubmitReview = async () => {
     try {
-      await post(`/movieReview`, {
-        movieId: id,
-        review,
-        score,
-      });
+      if(useGraphql === true){
+        await createMovieReview({
+          movieId: Number(id),
+          review,
+          score,
+        });
+      }else{
+        await post(`/movieReview`, {
+          movieId: id,
+          review,
+          score,
+        });
+      }
       showModal('Review sent successfully!',{});
       setReview('');
       setScore(0);

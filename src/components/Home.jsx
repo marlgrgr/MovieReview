@@ -4,6 +4,7 @@ import { useModal } from '../context/ModalContext';
 import Navbar from './NavBar';
 import { get, post } from '../services/api';
 import './Home.css';
+import { getMovies, loadMovies } from '../services/graphqlService';
 
 const Home = ({ user }) => {
   const [movies, setMovies] = useState([]);
@@ -12,13 +13,20 @@ const Home = ({ user }) => {
   const [loading, setLoading] = useState(false);
   const { showModal } = useModal();
   const socketRef = useRef(null);
+  const useGraphql = import.meta.env.VITE_API_USING_GRAPHQL?.toLowerCase?.() === "true";
 
   const fetchMovies = async () => {
     setLoading(true);
     try {
-      const response = await get(`/movie?page=${page}&pageSize=10`);
-      setMovies(response.data.results);
-      setTotalPages(response.data.totalPages);
+      if(useGraphql === true){
+        const response = await getMovies(page, 10);
+        setMovies(response.getMovieDetailsResponseDTO.results);
+        setTotalPages(response.getMovieDetailsResponseDTO.totalPages);
+      }else{
+        const response = await get(`/movie?page=${page}&pageSize=10`);
+        setMovies(response.data.results);
+        setTotalPages(response.data.totalPages);
+      }
     } catch (error) {
       console.error("Error loading movies", error);
     }
@@ -28,9 +36,16 @@ const Home = ({ user }) => {
   const handleLoadMoviesPost = async () => {
     setLoading(true);
     try {
-      const response = await post('/movie/load', {});
-      if (response.status === 202) {
-        showModal("Request to load movies sent successfully", {});
+      if(useGraphql === true){
+        const response = await loadMovies();
+        if (response.loadMovies === true ){
+          showModal("Request to load movies sent successfully", {});
+        }
+      }else{
+        const response = await post('/movie/load', {});
+        if (response.status === 202) {
+          showModal("Request to load movies sent successfully", {});
+        }
       }
     } catch (error) {
       console.error("Error loading movies", error);

@@ -4,6 +4,7 @@ import './UserRoles.css';
 import Navbar from '../NavBar';
 import { get, post, del } from '../../services/api';
 import { useModal } from '../../context/ModalContext';
+import { getUserById, getAllUserRolesByUserId, getRoles, createUserRole, deleteUserRole } from '../../services/graphqlService';
 
 const UserRoles = ({user}) => {
   const { userId } = useParams();
@@ -14,6 +15,7 @@ const UserRoles = ({user}) => {
   const [error, setError] = useState(null);
   const [username, setUsername] = useState('');
   const { showModal } = useModal();
+  const useGraphql = import.meta.env.VITE_API_USING_GRAPHQL?.toLowerCase?.() === "true";
 
   useEffect(() => {
     fetchUserData();
@@ -22,11 +24,19 @@ const UserRoles = ({user}) => {
 
   const fetchUserData = async () => {
     try {
-      const userResponse = await get(`/users/${userId}`);
-      setUsername(userResponse.data.username);
-      
-      const rolesResponse = await get(`/userRoles/user/${userId}/all`);
-      setUserRoles(rolesResponse.data);
+      if(useGraphql === true){
+        const userResponse = await getUserById(userId);
+        setUsername(userResponse.getUserById.username);
+        
+        const rolesResponse = await getAllUserRolesByUserId(userId);
+        setUserRoles(rolesResponse.getAllUserRoleListByUserId);
+      }else{
+        const userResponse = await get(`/users/${userId}`);
+        setUsername(userResponse.data.username);
+        
+        const rolesResponse = await get(`/userRoles/user/${userId}/all`);
+        setUserRoles(rolesResponse.data);
+      }
       setError(null);
     } catch (err) {
       setError('Error fetching user data: ' + err.message);
@@ -38,8 +48,13 @@ const UserRoles = ({user}) => {
 
   const fetchRoles = async () => {
     try {
-      const response = await get(`/roles`);
-      setAvailableRoles(response.data);
+      if(useGraphql === true){
+        const response = await getRoles();
+        setAvailableRoles(response.getRoleList);
+      }else{
+        const response = await get(`/roles`);
+        setAvailableRoles(response.data);
+      }
     } catch (err) {
       console.error('Error fetching roles:', err);
       setError('Error fetching roles: ' + err.message);
@@ -48,10 +63,17 @@ const UserRoles = ({user}) => {
 
   const addRole = async (roleId) => {
     try {
-      await post(`/userRoles`, {
+      if(useGraphql === true){
+        await createUserRole({
+          user: { id: Number(userId) },
+          role: { id: Number(roleId) }
+        });
+      }else{
+        await post(`/userRoles`, {
           user: { id: userId },
           role: { id: roleId }
-        });
+        });  
+      }
       
       fetchUserData();
       showModal('Role added successfully',{});
@@ -64,7 +86,11 @@ const UserRoles = ({user}) => {
   const removeRole = async (userRoleId) => {
     if (window.confirm('Are you sure you want to delete this role?')) {
       try {
-        await del(`/userRoles/${userRoleId}`);
+        if(useGraphql === true){
+          await deleteUserRole(userRoleId);
+        }else{
+          await del(`/userRoles/${userRoleId}`);
+        }
         
         fetchUserData();
         showModal('Role deleted succesfully',{});

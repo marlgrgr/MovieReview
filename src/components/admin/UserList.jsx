@@ -4,6 +4,7 @@ import './UserList.css';
 import Navbar from '../NavBar';
 import { get, post, del } from '../../services/api';
 import { useModal } from '../../context/ModalContext';
+import { getUsers, deleteUser, createUser } from '../../services/graphqlService';
 
 const UserList = ({user}) => {
   const [users, setUsers] = useState([]);
@@ -13,6 +14,7 @@ const UserList = ({user}) => {
   const [totalPages, setTotalPages] = useState(0);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const { showModal } = useModal();
+  const useGraphql = import.meta.env.VITE_API_USING_GRAPHQL?.toLowerCase?.() === "true";
   
   const handleCloseModal = () => {
     setShowCreateModal(false);
@@ -35,10 +37,17 @@ const UserList = ({user}) => {
   const fetchUsers = async (page = 1) => {
     setLoading(true);
     try {
-      const response = await get(`/users?page=${page}&pageSize=10`);
-      setUsers(response.data.results);
-      setCurrentPage(response.data.page);
-      setTotalPages(response.data.totalPages);
+      if(useGraphql === true){
+        const response = await getUsers(page, 10);
+        setUsers(response.getUsers.results);
+        setCurrentPage(response.getUsers.page);
+        setTotalPages(response.getUsers.totalPages);
+      }else{
+        const response = await get(`/users?page=${page}&pageSize=10`);
+        setUsers(response.data.results);
+        setCurrentPage(response.data.page);
+        setTotalPages(response.data.totalPages);
+      }
       setError(null);
     } catch (err) {
       setError('Error fetching users: ' + err.message);
@@ -48,10 +57,14 @@ const UserList = ({user}) => {
     }
   };
 
-  const deleteUser = async (userId) => {
+  const deleteUserFn = async (userId) => {
     if (window.confirm('Are you sure you want to delete this user?')) {
       try {
-        await del(`/users/${userId}`);
+        if(useGraphql === true){
+          await deleteUser(userId);
+        }else{
+          await del(`/users/${userId}`);
+        }
         fetchUsers();
         showModal('User successfully deleted',{});
       } catch (err) {
@@ -61,14 +74,22 @@ const UserList = ({user}) => {
     }
   };
 
-  const createUser = async (e) => {
+  const createUserFn = async (e) => {
     e.preventDefault();
     try {
-      await post(`/users`, {
-        username: newUser.username,
-        password: newUser.password,
-        fullname: newUser.fullname
-      });
+      if(useGraphql === true){
+        await createUser({
+          username: newUser.username,
+          password: newUser.password,
+          fullname: newUser.fullname
+        });
+      }else{
+        await post(`/users`, {
+          username: newUser.username,
+          password: newUser.password,
+          fullname: newUser.fullname
+        });
+      }
       setShowCreateModal(false);
       setNewUser({ username: '',
         password: '',
@@ -127,7 +148,7 @@ const UserList = ({user}) => {
                   </Link>
                   <button 
                     className="delete-user-btn"
-                    onClick={() => deleteUser(user.id)}
+                    onClick={() => deleteUserFn(user.id)}
                   >
                     Delete
                   </button>
@@ -137,7 +158,6 @@ const UserList = ({user}) => {
           </tbody>
         </table>
 
-        {/* Paginación */}
         <div className="pagination">
             <button onClick={() => fetchUsers(currentPage - 1)} disabled={currentPage === 1}>
               Previous
@@ -148,12 +168,11 @@ const UserList = ({user}) => {
             </button>
           </div>
 
-        {/* Modal para crear usuario */}
         {showCreateModal && (
           <div className="modal-overlay">
             <div className="modal-content">
               <h2>Create New User</h2>
-              <form onSubmit={createUser}>
+              <form onSubmit={createUserFn}>
                 <div className="form-group">
                   <label>Fullname:</label>
                   <input 
