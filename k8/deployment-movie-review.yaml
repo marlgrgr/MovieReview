@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: movie-review
+  namespace: playground
+spec:
+  replicas: ${REPLICAS_MOVIE_REVIEW}
+  selector:
+    matchLabels:
+      app: movie-review
+      type: react
+  template:
+    metadata:
+      labels:
+        app: movie-review
+        type: react
+    spec:
+      containers:
+        - name: movie-review
+          image: movie-review:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
