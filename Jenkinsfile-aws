@@ -1,0 +1,152 @@
+pipeline {
+    agent any
+	
+	tools {
+        nodejs 'Node-24'
+    }
+    
+    environment {
+        ENVIRONMENT = "aws"
+        CONFIG_FILE_ID = "movie-review-properties-${ENVIRONMENT}"
+		AWS_CREDENTIALS_ID = "playground-aws-credentials-${ENVIRONMENT}"
+        DOCKER_IMAGE = "movie-review"
+        APP_NAME = "movie-review"
+    }
+    
+    stages {
+		stage('Load AWS Configuration') {
+            steps {
+                script {
+                    withCredentials([
+                        string(credentialsId: "playground-aws-region-${ENVIRONMENT}", variable: 'AWS_REGION'),
+                        string(credentialsId: "playground-ecr-repository-movie-review-${ENVIRONMENT}", variable: 'ECR_REPOSITORY_NAME'),
+						string(credentialsId: "playground-ecr-repository-movie-review-uri-${ENVIRONMENT}", variable: 'ECR_REPOSITORY_URI'),
+                        string(credentialsId: "playground-ecs-cluster-${ENVIRONMENT}", variable: 'ECS_CLUSTER_NAME'),
+                        string(credentialsId: "playground-ecs-service-playground-movie-review-${ENVIRONMENT}", variable: 'ECS_SERVICE_NAME')
+                    ]) {
+                        env.AWS_REGION = "${AWS_REGION}"
+                        env.ECR_REPOSITORY_NAME = "${ECR_REPOSITORY_NAME}"
+						env.ECR_REPOSITORY_URI = "${ECR_REPOSITORY_URI}"
+                        env.ECS_CLUSTER_NAME = "${ECS_CLUSTER_NAME}"
+                        env.ECS_SERVICE_NAME = "${ECS_SERVICE_NAME}"
+                        
+                        echo "AWS Configuration loaded"
+                    }
+                }
+            }
+        }
+		
+		stage('AWS Identity Check') {
+            steps {
+                script {
+                    withCredentials([aws(credentialsId: "${AWS_CREDENTIALS_ID}")]) {
+                        sh '''
+                            echo "Checking AWS identity..."
+                            aws sts get-caller-identity
+                            echo "AWS CLI configured successfully"
+                        '''
+                    }
+                }
+            }
+        }
+		
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+        
+        stage('Install dependencies') {
+            steps {
+                sh 'npm install'
+            }
+        }
+		
+        stage('Build project') {
+            steps {
+                sh 'npm run build'
+            }
+        }
+        
+        stage('Prepare Config') {
+            steps {
+                configFileProvider([configFile(fileId: "${CONFIG_FILE_ID}", targetLocation: '.env.production')]) {
+                    echo "Environmental file loaded from Config File Manager"
+                }
+            }
+        }
+        
+        stage('ECR Login & Docker Build') {
+            steps {
+                script {
+                    withCredentials([aws(credentialsId: "${AWS_CREDENTIALS_ID}")]) {
+                        sh '''
+                            echo "Logging into ECR..."
+                            aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REPOSITORY_NAME}
+                            
+                            echo "Building Docker image..."
+                            docker build -t ${DOCKER_IMAGE} .
+                            docker tag ${DOCKER_IMAGE}:latest ${ECR_REPOSITORY_URI}:latest
+                        '''
+                    }
+                }
+            }
+        }
+        
+        stage('Push to ECR') {
+            steps {
+                script {
+                    withCredentials([aws(credentialsId: "${AWS_CREDENTIALS_ID}")]) {
+                        sh '''
+                            echo "Pushing image to ECR..."
+                            docker push ${ECR_REPOSITORY_URI}:latest
+                            echo "Image pushed successfully to ECR!"
+                        '''
+                    }
+                }
+            }
+        }
+        
+        stage('Update ECS Service') {
+            steps {
+                script {
+                    withCredentials([aws(credentialsId: "${AWS_CREDENTIALS_ID}")]) {
+                        sh '''
+                            echo "Updating ECS service..."
+                            aws ecs update-service \
+                                --cluster ${ECS_CLUSTER_NAME} \
+                                --service ${ECS_SERVICE_NAME} \
+                                --force-new-deployment \
+                                --region ${AWS_REGION}
+                            
+                            echo "ECS Service update initiated successfully"
+                        '''
+                    }
+                }
+            }
+        }
+        
+        stage('Cleanup Local Images') {
+            steps {
+                script {
+                    sh '''
+                        echo "Cleaning up local Docker images..."
+                        docker rmi ${ECR_REPOSITORY_URI}:latest || true
+                        docker image prune -f
+                    '''
+                }
+            }
+        }
+    }
+    post {
+		always {	
+			sh 'rm -f $HOME/.docker/config.json || true'
+        }
+        success {
+            echo 'The pipeline has been completed successfully'
+        }
+        failure {
+            echo 'The pipeline has failed'
+        }
+    }
+}
